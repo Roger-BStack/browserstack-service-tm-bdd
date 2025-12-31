@@ -124,65 +124,76 @@ class BrowserStackService {
         }
     }
 
-    async getOrCreateTestCase(folderId, scenarioName, createTestCaseCallback) {
-        try {
-            // Fetch the list of test cases in the folder
-            const response = await axios.get(
-                `${this.apiBaseUrl}/projects/${this.projectId}/test-cases?folder_id=${folderId}`,
-                { auth: this.auth }
-            );
+    async handleExistingTestCase(existingTestCase, scenarioName, createTestCaseCallback) {
+        const userOption = process.env.EXISTING_TEST_CASE_OPTION || 'skip';
+        const testCaseTemplate = process.env.TEST_CASE_TEMPLATE || 'bdd';
 
-            if (response.data && response.data.test_cases) {
-                const existingTestCase = response.data.test_cases.find(tc => tc.title === scenarioName);
-                if (existingTestCase) {
-                    console.log(`Test case '${scenarioName}' already exists with ID: ${existingTestCase.identifier}`);
+        if (userOption === 'skip') {
+            console.log(`Skipping upload for existing test case: ${scenarioName}`);
+            return;
+        }
 
-                    // Provide options for existing test case
-                    const userOption = process.env.EXISTING_TEST_CASE_OPTION || 'skip'; // Options: skip, update, delete
-                    const testCaseTemplate = process.env.TEST_CASE_TEMPLATE || 'bdd'; // Default to 'bdd'
-
-                    if (userOption === 'skip') {
-                        console.log(`Skipping upload for existing test case: ${scenarioName}`);
-                        return;
-                    } else if (userOption === 'update') {
-                        if (
-                            (testCaseTemplate === 'bdd' && existingTestCase.template !== 'test_case_bdd') ||
-                            (testCaseTemplate === 'steps' && existingTestCase.template !== 'test_case_steps')
-                        ) {
-                            console.warn(
-                                `Template mismatch for test case '${scenarioName}'. ` +
-                                `Expected template: '${testCaseTemplate === 'bdd' ? 'test_case_bdd' : 'test_case_steps'}', ` +
-                                `but found: '${existingTestCase.template}'. Skipping update.`
-                            );
-                            return;
-                        }
-
-                        console.log(`Updating existing test case: ${scenarioName}`);
-                        await this.updateTestCase(existingTestCase.identifier, createTestCaseCallback);
-                        return;
-                    } else if (userOption === 'delete') {
-                        console.log(`Deleting and recreating test case: ${scenarioName}`);
-                        await this.deleteTestCase(existingTestCase.identifier);
-
-                        // Recreate the test case in the same folder
-                        console.log(`Recreating test case '${scenarioName}' in folder ID: ${folderId}`);
-                    }
-                }
+        if (userOption === 'update') {
+            const expectedTemplate = testCaseTemplate === 'bdd' ? 'test_case_bdd' : 'test_case_steps';
+            if (existingTestCase.template !== expectedTemplate) {
+                console.warn(
+                    `Template mismatch for test case '${scenarioName}'. ` +
+                    `Expected: '${expectedTemplate}', Found: '${existingTestCase.template}'. Skipping update.`
+                );
+                return;
             }
+            console.log(`Updating existing test case: ${scenarioName}`);
+            await this.updateTestCase(existingTestCase.identifier, createTestCaseCallback);
+            return;
+        }
 
-            // Create a new test case if it doesn't exist
-            console.log(`Creating new test case '${scenarioName}' in folder ID: ${folderId}`);
+        if (userOption === 'delete') {
+            console.log(`Deleting and recreating test case: ${scenarioName}`);
+            await this.deleteTestCase(existingTestCase.identifier);
+            console.log(`Recreating test case: ${scenarioName}`);
+            const folderId = existingTestCase.folder_id; // Assuming folder_id is available in existingTestCase
             const payload = await createTestCaseCallback(folderId);
-
-            // Send POST request to create the test case
             const createResponse = await axios.post(
                 `${this.apiBaseUrl}/projects/${this.projectId}/folders/${folderId}/test-cases`,
                 payload,
                 { auth: this.auth }
             );
 
-            if (createResponse.data.data && createResponse.data.data.test_case) {
-                console.log(`Test case '${scenarioName}' created successfully with ID: ${createResponse.data.data.test_case.identifier}`);
+            const newTestCase = createResponse.data?.data?.test_case;
+            if (newTestCase) {
+                console.log(`Test case '${scenarioName}' recreated successfully with ID: ${newTestCase.identifier}`);
+            } else {
+                throw new Error(`Failed to recreate test case '${scenarioName}'`);
+            }
+        }
+    }
+
+    async getOrCreateTestCase(folderId, scenarioName, createTestCaseCallback) {
+        try {
+            const response = await axios.get(
+                `${this.apiBaseUrl}/projects/${this.projectId}/test-cases?folder_id=${folderId}`,
+                { auth: this.auth }
+            );
+
+            const existingTestCase = response.data?.test_cases?.find(tc => tc.title === scenarioName);
+
+            if (existingTestCase) {
+                console.log(`Test case '${scenarioName}' already exists with ID: ${existingTestCase.identifier}`);
+                await this.handleExistingTestCase(existingTestCase, scenarioName, createTestCaseCallback);
+                return;
+            }
+
+            console.log(`Creating new test case '${scenarioName}' in folder ID: ${folderId}`);
+            const payload = await createTestCaseCallback(folderId);
+            const createResponse = await axios.post(
+                `${this.apiBaseUrl}/projects/${this.projectId}/folders/${folderId}/test-cases`,
+                payload,
+                { auth: this.auth }
+            );
+
+            const newTestCase = createResponse.data?.data?.test_case;
+            if (newTestCase) {
+                console.log(`Test case '${scenarioName}' created successfully with ID: ${newTestCase.identifier}`);
             } else {
                 throw new Error(`Failed to create test case '${scenarioName}'`);
             }
