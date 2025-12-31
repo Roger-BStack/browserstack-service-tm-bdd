@@ -1,38 +1,18 @@
 # browserstack-service-tm-bdd
 
-This project parses Gherkin BDD feature files and creates test cases in BrowserStack Test Management using its REST API.
+This project parses Gherkin BDD feature files and creates test cases in BrowserStack Test Management using its REST API. The `BrowserStackService` class handles folder creation, test case management, and API communication with BrowserStack.
 
 ## Features
 - Recursively traverse directories to find `.feature` files.
 - Parse `.feature` files using `@cucumber/gherkin`.
 - Upload scenarios as "Test Case with Steps" or "BDD Test Case" to BrowserStack Test Management.
 
-## Prerequisites
-- Node.js (v16 or higher)
-- BrowserStack Test Management API credentials
-
-## Installation
-1. Clone the repository.
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Create a `.env` file in the root directory with the following content:
-   ```env
-   BROWSERSTACK_USERNAME=your_username
-   BROWSERSTACK_ACCESS_KEY=your_access_key
-   BROWSERSTACK_PROJECT_ID=your_project_id
-   ```
-
-## Usage
-Run the project with:
-```bash
-npm start
-```
-
 ## Project Structure
 ```
-bdd-samples/
+browserstack-service-tm-bdd/
+├── features/
+│   └── Friday.feature
+│   └── SocialNetworkLogin.feature
 ├── src/
 │   ├── services/
 │   │   └── BrowserStackService.js
@@ -41,10 +21,6 @@ bdd-samples/
 ├── .gitignore
 └── README.md
 ```
-
-# BrowserStack Test Management Integration
-
-This project integrates with BrowserStack Test Management to upload scenarios from Gherkin feature files as test cases. The `BrowserStackService` class handles folder creation, test case management, and API communication with BrowserStack.
 
 ## Environment Variables
 
@@ -68,17 +44,22 @@ The following environment variables are required to configure the application:
 
 ### Test Case Template
 - **`TEST_CASE_TEMPLATE`**: (Optional) Determines the template for test cases. Options are:
+  - `bdd`: Create BDD-style test cases (default). 
   - `steps`: Create test cases with steps.
-  - `bdd`: Create BDD-style test cases (default).
 
-## Usage
 
-### Prerequisites
-1. Install dependencies:
+
+## Prerequisites
+- Node.js (v16 or higher)
+- BrowserStack Test Management API credentials
+
+## Installation
+1. Clone the repository.
+2. Install dependencies:
    ```bash
    npm install
    ```
-2. Create a `.env` file in the root directory and configure the required environment variables, OR set them in the shell prior to execution:
+3. Create a `.env` file in the root directory and configure the required environment variables, OR set them in the shell prior to execution:
    ```env
    BROWSERSTACK_USERNAME=your_username
    BROWSERSTACK_ACCESS_KEY=your_access_key
@@ -87,7 +68,8 @@ The following environment variables are required to configure the application:
    EXISTING_TEST_CASE_OPTION=skip
    TEST_CASE_TEMPLATE=bdd
    ```
-
+   
+## Usage
 ### Running the Application
 
 The application processes all `.feature` files in the `features` directory and uploads scenarios to BrowserStack Test Management.
