@@ -1,0 +1,19 @@
+{
+  "name": "bdd-samples",
+  "version": "1.0.0",
+  "description": "A Node.js project for parsing Gherkin BDD feature files and creating test cases in BrowserStack Test Management.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@cucumber/gherkin": "^30.0.0",
+    "@cucumber/gherkin-streams": "^6.0.0",
+    "@cucumber/message-streams": "^4.0.1",
+    "@cucumber/messages": "^31.1.0",
+    "axios": "^1.5.0",
+    "dotenv": "^16.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}
