@@ -92,15 +92,29 @@ class BrowserStackService {
 
     async getOrCreateFolder(folderName) {
         try {
-            // Fetch the list of folders in the project
-            const response = await axios.get(`${this.apiBaseUrl}/projects/${this.projectId}/folders`, { auth: this.auth });
-            if (response.data && response.data.folders) {
-                // Check if the folder already exists
-                const existingFolder = response.data.folders.find(folder => folder.name === folderName);
-                if (existingFolder) {
-                    console.log(`Folder '${folderName}' already exists with ID: ${existingFolder.id}`);
-                    return existingFolder.id;
+            let folders = [];
+            let nextPage = 1;
+
+            // Fetch all pages of folders using info.next
+            while (nextPage) {
+                const response = await axios.get(
+                    `${this.apiBaseUrl}/projects/${this.projectId}/folders?p=${nextPage}`,
+                    { auth: this.auth }
+                );
+
+                if (response.data && response.data.folders) {
+                    folders = folders.concat(response.data.folders);
+                    nextPage = response.data.info?.next || null; // Use info.next to determine the next page
+                } else {
+                    break;
                 }
+            }
+
+            // Check if the folder already exists
+            const existingFolder = folders.find(folder => folder.name === folderName);
+            if (existingFolder) {
+                console.log(`Folder '${folderName}' already exists with ID: ${existingFolder.id}`);
+                return existingFolder.id;
             }
 
             // Folder does not exist, create a new one
