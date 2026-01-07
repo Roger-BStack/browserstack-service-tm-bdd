@@ -47,7 +47,10 @@ The following environment variables are required to configure the application:
   - `bdd`: Create BDD-style test cases (default). 
   - `steps`: Create test cases with steps.
 
-
+### Folder Structure Preservation
+- **`PRESERVE_DIRECTORY_STRUCTURE`**: (Optional) Determines whether to preserve the directory structure when traversing and uploading feature files. Options are:
+  - `true`: Preserve the directory structure by creating corresponding folders in BrowserStack Test Management.
+  - `false`: Do not preserve the directory structure (default).
 
 ## Prerequisites
 - Node.js (v16 or higher)
@@ -67,6 +70,7 @@ The following environment variables are required to configure the application:
    FOLDER_CREATION_DELAY=10000
    EXISTING_TEST_CASE_OPTION=skip
    TEST_CASE_TEMPLATE=bdd
+   PRESERVE_DIRECTORY_STRUCTURE=true
    ```
    
 ## Usage

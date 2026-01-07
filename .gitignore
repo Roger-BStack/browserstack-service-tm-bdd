@@ -14,6 +14,6 @@ npm-debug.log*
 .DS_Store
 
 # Sample feature files
-/features/*.feature
+/features/*
 !features/Friday.feature
 !features/SocialNetworkLogin.feature

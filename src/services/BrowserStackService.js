@@ -19,43 +19,57 @@ class BrowserStackService {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    async traverseDirectory(directory) {
+    async traverseDirectory(directory, parentFolderId = null) {
+        const preserveDirStructure = process.env.PRESERVE_DIRECTORY_STRUCTURE === 'true';
         const files = fs.readdirSync(directory);
+
         for (const file of files) {
             const fullPath = path.join(directory, file);
             const stat = fs.statSync(fullPath);
             console.log(`Processing: ${fullPath} for Project ID: ${this.projectId}`);
             if (stat.isDirectory()) {
-                await this.traverseDirectory(fullPath);
+                console.log(`Processing folder: ${file}`);
+                let folderId = null;
+
+                if (preserveDirStructure) {
+                    folderId = await this.getOrCreateFolder(file, parentFolderId);
+                }
+
+                await this.traverseDirectory(fullPath, preserveDirStructure ? folderId : parentFolderId);
             } else if (file.endsWith('.feature')) {
-                await this.processFeatureFile(fullPath);
+                console.log(`Processing feature file: ${file}`);
+
+                await this.processFeatureFile(fullPath, parentFolderId);
             }
         }
     }
 
-    async processFeatureFile(filePath) {
+    async processFeatureFile(filePath, parentFolderId) {
         const featureContent = fs.readFileSync(filePath, 'utf8');
 
         const options = {
             includeSource: false,
             includeGherkinDocument: true,
             includePickles: false,
-        }
+        };
         const stream = GherkinStreams.fromPaths([filePath], options);
 
         for await (const message of stream) {
             // Process the message (e.g., a GherkinDocument, a Pickle, or a Source message)
             if (message.gherkinDocument) {
                 console.log('Parsed Feature Name:', message.gherkinDocument.feature.name);
-                await this.processGherkinDocument(message.gherkinDocument, filePath);
+                await this.processGherkinDocument(message.gherkinDocument, filePath, parentFolderId);
             }
         }
     }
 
-    async processGherkinDocument(gherkinDocument, filePath) {
+    async processGherkinDocument(gherkinDocument, filePath, parentFolderId) {
         const feature = gherkinDocument.feature;
         if (feature) {
             console.log(`Feature Name: ${feature.name}`);
+
+            const featureFolderName = path.basename(filePath);
+            const featureFolderId = await this.getOrCreateFolder(featureFolderName, parentFolderId);
 
             for (const scenario of feature.children) {
                 if (scenario.scenario) {
@@ -64,13 +78,13 @@ class BrowserStackService {
                         console.log(`    Step: ${step.keyword.trim()} ${step.text}`);
                     }
                     console.log(`\nUploading Scenario: ${scenario.scenario.name}`);
-                    await this.uploadPickleScenario(filePath, feature.name, scenario.scenario);
+                    await this.uploadPickleScenario(filePath, feature.name, scenario.scenario, featureFolderId);
                 }
             }
         }
     }
 
-    async uploadPickleScenario(featureFilePath, featureName, scenario) {
+    async uploadPickleScenario(featureFilePath, featureName, scenario, parentFolderId) {
         const folderName = path.basename(featureFilePath); // Use full feature file name as folder name
         const scenarioName = scenario.name;
         const background = scenario.steps.filter(step => step.keyword === 'Background').map(step => step.text).join('\n');
@@ -80,38 +94,57 @@ class BrowserStackService {
 
         if (testCaseTemplate === 'steps') {
             console.log(`Uploading as Test Case with Steps: ${scenarioName}`);
-            await this.createTestCaseWithSteps(folderName, scenarioName, featureName, background, scenario.steps);
+            await this.createTestCaseWithSteps(folderName, scenarioName, featureName, background, scenario.steps, parentFolderId);
         } else if (testCaseTemplate === 'bdd') {
             console.log(`Uploading as BDD Test Case: ${scenarioName}`);
-            await this.createBDDTestCase(folderName, scenarioName, featureName, background, scenario.steps);
+            await this.createBDDTestCase(folderName, scenarioName, featureName, background, scenario.steps, parentFolderId);
         } else {
             console.error(`Invalid TEST_CASE_TEMPLATE value: ${testCaseTemplate}. Must be 'steps' or 'bdd'.`);
             throw new Error(`Invalid TEST_CASE_TEMPLATE value: ${testCaseTemplate}`);
         }
     }
 
-    async getOrCreateFolder(folderName) {
-        try {
-            let folders = [];
-            let nextPage = 1;
+    async fetchAllFolders(parentFolderId = null) {
+        let folders = [];
+        let nextPage = 1;
 
-            // Fetch all pages of folders using info.next
+        try {
             while (nextPage) {
-                const response = await axios.get(
-                    `${this.apiBaseUrl}/projects/${this.projectId}/folders?p=${nextPage}`,
-                    { auth: this.auth }
-                );
+                let response;
+                if (parentFolderId) {
+                    console.log(`Fetching folders under Parent ID: ${parentFolderId}, Page: ${nextPage}`);
+                    response = await axios.get(
+                        `${this.apiBaseUrl}/projects/${this.projectId}/folders/${parentFolderId}/sub-folders?p=${nextPage}`,
+                        { auth: this.auth }
+                    );
+                } else {
+                    console.log(`Fetching root folders, Page: ${nextPage}`);
+                    response = await axios.get(
+                        `${this.apiBaseUrl}/projects/${this.projectId}/folders?p=${nextPage}`,
+                        { auth: this.auth }
+                    );
+                }
 
                 if (response.data && response.data.folders) {
                     folders = folders.concat(response.data.folders);
-                    nextPage = response.data.info?.next || null; // Use info.next to determine the next page
+                    nextPage = response.data.info?.next || null;
                 } else {
                     break;
                 }
             }
+        } catch (error) {
+            console.error(`Error fetching folders: ${error.message}`);
+            throw error;
+        }
 
-            // Check if the folder already exists
-            const existingFolder = folders.find(folder => folder.name === folderName);
+        return folders;
+    }
+
+    async getOrCreateFolder(folderName, parentFolderId = null) {
+        try {
+            const folders = await this.fetchAllFolders(parentFolderId);
+
+            const existingFolder = folders.find(folder => folder.name === folderName && folder.parent_id === parentFolderId);
             if (existingFolder) {
                 console.log(`Folder '${folderName}' already exists with ID: ${existingFolder.id}`);
                 return existingFolder.id;
@@ -120,12 +153,12 @@ class BrowserStackService {
             // Folder does not exist, create a new one
             const createResponse = await axios.post(
                 `${this.apiBaseUrl}/projects/${this.projectId}/folders`,
-                { folder: { name: folderName, description: `Folder for feature: ${folderName}` } },
+                { folder: { name: folderName, description: `Folder for feature: ${folderName}`, parent_id: parentFolderId } },
                 { auth: this.auth }
             );
 
             if (createResponse.data && createResponse.data.folder) {
-                console.log(`Created new folder '${folderName}' with ID: ${createResponse.data.folder.id}`);
+                console.log(`Created new folder '${folderName}' with ID: ${createResponse.data.folder.id} under parent ID: ${parentFolderId}`);
                 console.log(`Waiting for ${this.folderCreationDelay} ms, for initial folder creation to be finalized...`);
                 await this.delay(this.folderCreationDelay); // Add delay after folder creation
                 return createResponse.data.folder.id;
@@ -165,7 +198,7 @@ class BrowserStackService {
             console.log(`Deleting and recreating test case: ${scenarioName}`);
             await this.deleteTestCase(existingTestCase.identifier);
             console.log(`Recreating test case: ${scenarioName}`);
-            const folderId = existingTestCase.folder_id; // Assuming folder_id is available in existingTestCase
+            const folderId = existingTestCase.folder_id;
             const payload = await createTestCaseCallback(folderId);
             const createResponse = await axios.post(
                 `${this.apiBaseUrl}/projects/${this.projectId}/folders/${folderId}/test-cases`,
@@ -245,9 +278,8 @@ class BrowserStackService {
         }
     }
 
-    async createTestCaseWithSteps(folderName, scenarioName, featureName, background, steps) {
-        const folderId = await this.getOrCreateFolder(folderName);
-        await this.getOrCreateTestCase(folderId, scenarioName, async (folderId) => {
+    async createTestCaseWithSteps(folderName, scenarioName, featureName, background, steps, parentFolderId) {
+        await this.getOrCreateTestCase(parentFolderId, scenarioName, async (folderId) => {
             const testCaseSteps = steps.map(step => ({ step: `${step.keyword}${step.text}`, result: '' }));
             return {
                 test_case: {
@@ -261,9 +293,8 @@ class BrowserStackService {
         });
     }
 
-    async createBDDTestCase(folderName, scenarioName, featureName, background, steps) {
-        const folderId = await this.getOrCreateFolder(folderName);
-        await this.getOrCreateTestCase(folderId, scenarioName, async (folderId) => {
+    async createBDDTestCase(folderName, scenarioName, featureName, background, steps, parentFolderId) {
+        await this.getOrCreateTestCase(parentFolderId, scenarioName, async (folderId) => {
             const scenarioContent = steps.map(step => `\t${step.keyword}${step.text}`).join('\n');
             return {
                 test_case: {
